@@ -43,15 +43,24 @@ class CouponChain:
     def __init__(
         self,
         llm,
+        vector_store,
         coupon_db: SQLDatabase,
         allowed_tables=None,
         cache=None,
-        category_retriever=None,
+        category_names=[],
         max_tokens=0,
         checkpointer=None,
     ):
+        assert llm is not None, "llm is required"
+        assert coupon_db is not None, "coupon_db is required"
+        assert vector_store is not None, "vector_store is required"
+        assert (
+            category_names is not None and len(category_names) > 0
+        ), "category names are required"
+
         self.llm = llm
         self.coupon_db = coupon_db
+        self.vector_store = vector_store
 
         if cache is not None:
             set_llm_cache(cache)
@@ -60,9 +69,8 @@ class CouponChain:
         if allowed_tables is not None:
             allowed_tables = coupon_db.get_usable_table_names()
 
-        assert category_retriever is not None, "category_retriever is required"
         self.search_categories_tool = create_retriever_tool(
-            category_retriever,
+            self._create_category_retriever(category_names=category_names),
             name=self.CATEGORY_LOOKUP_TOOL_NAME,
             description=(
                 "Use to look up categories to filter on. Input is an approximate spelling "
@@ -84,9 +92,17 @@ class CouponChain:
         if checkpointer is not None:
             checkpointer.setup()
 
-        self.graph = self.__build_graph(checkpointer=self.checkpointer)
+        self.graph = self._build_graph(checkpointer=self.checkpointer)
 
-    def __build_graph(self, checkpointer=None):
+    def _create_category_retriever(self, category_names, score_threshold=0.5, k=1):
+        _ = self.vector_store.add_texts(category_names)
+
+        return self.vector_store.as_retriever(
+            # search_type="similarity_score_threshold",
+            search_kwargs={"score_threshold": score_threshold, "k": k},
+        )
+
+    def _build_graph(self, checkpointer=None):
         graph_builder = StateGraph(state_schema=State)
 
         graph_builder.add_node(
@@ -303,18 +319,23 @@ if __name__ == "__main__":
     # Todo, this should come from a config
     allowed_tables = ["categories", "country_list", "coupons", "websites"]
 
+    res = coupon_db.run("SELECT name FROM categories")
+    res = [el for sub in ast.literal_eval(res) for el in sub if el]
+    categories = list(set(res))
+
     with PostgresSaver.from_conn_string(
         config.CHECKPOINT_DB_CONN_STRING
     ) as checkpointer:
         checkpointer.setup()
         coupon_chatbot = CouponChain(
             llm=llm,
-            coupon_db=coupon_db,
-            allowed_tables=allowed_tables,
-            category_retriever=create_category_retriever(coupon_db, vector_store),
+            vector_store=vector_store,
             checkpointer=checkpointer,
             cache=InMemoryCache(),
             max_tokens=384,
+            coupon_db=coupon_db,
+            allowed_tables=allowed_tables,
+            category_names=categories,
         )
 
         coupon_chatbot.converse()

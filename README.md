@@ -17,9 +17,11 @@ Either:
 | 5. Use Memory                             | ✅          | ✅        |
 | 6. Trim memory                            | ✅          | ✅        |
 | 7. Caching                                | ✅          | ✅        |
-| 8. Error Handling                         | ❌          | ❌        |
-| 9. Code Structure                         | ✅          | ❌        |
-| 10. Deployment                            | ❌          | ❌        |
+| 9. Code Structure                         | ✅          | ✅        |
+| 10. Setup Guard rails                     | ❌          | ❌        |
+| 11. Error Handling                        | ❌          | ❌        |
+| 12. Deployment                            | ❌          | ❌        |
+| 13. Option (Trim vs. Summarize)           | ❌          | ❌        |
 
 ## Setup
 
