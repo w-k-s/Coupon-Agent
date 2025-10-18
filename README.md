@@ -54,13 +54,37 @@ Either:
 
     Update with your `OPENAI_API_KEY`.
 
-5. Seed the database using the script
+5. Setup Guardrails.ai
+
+    1. Install [Guardrails AI](https://www.guardrailsai.com/)
+
+        ```shell
+        python3 -m pip install guardrails-ai
+        ```
+
+    2. Configure Guardrails AI with your API Key
+
+        ```shell
+        guardrails configure
+        ```
+
+    3. Important the guardrails used in this project.
+
+        ```shell
+        guardrails hub install hub://guardrails/detect_pii
+        guardrails hub install hub://groundedai/grounded_ai_hallucination
+        guardrails hub install hub://guardrails/profanity_free
+        ```
+
+        - `detect_pii`: There prevents leaking user data. It is possible to convince the LLM to give away data in the `users` table.
+
+6. Seed the database using the script
 
     ```shell
     python seed_coupons.py
     ```
 
-6. To run the coupon bot in RAG Agent Mode:
+7. To run the coupon bot in RAG Agent Mode:
 
     ```shell
     python rag_agent.py
@@ -74,5 +98,7 @@ Either:
 
 ## Useful Resources
 
-![I found the example in this question useful](https://github.com/langchain-ai/langgraph/discussions/3004)
+- [Relevant Langchain Tutorial](https://python.langchain.com/docs/tutorials/sql_qa/)
+- [Guardrails](https://www.guardrailsai.com/docs/integrations/langchain)
+- [I found the example in this question useful](https://github.com/langchain-ai/langgraph/discussions/3004)
 
