@@ -1,28 +1,19 @@
 import ast
-from config import Config
+from .base import BaseStrategy
 from typing import Sequence
 from typing_extensions import TypedDict
 from typing_extensions import Annotated
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_community.tools.sql_database.tool import QuerySQLDatabaseTool
-from langgraph.graph import START, END, StateGraph, MessagesState
 from langgraph.graph.message import add_messages
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import ToolNode
-from langchain_core.tools import tool
 from langchain_core.messages import BaseMessage
 from langchain_core.messages.human import HumanMessage
 from langchain_core.messages.system import SystemMessage
-from langchain.chat_models import init_chat_model
-from langchain_openai import OpenAIEmbeddings
-from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_community.utilities import SQLDatabase
-from langchain.agents.agent_toolkits import create_retriever_tool
-from langgraph.checkpoint.postgres import PostgresSaver
 from langchain_core.messages import trim_messages
-from langchain.globals import set_llm_cache
-from langchain_community.cache import InMemoryCache
 from langchain.tools.base import StructuredTool
+from langgraph.graph import END, StateGraph
 
 
 class State(TypedDict):
@@ -37,7 +28,7 @@ class QueryOutput(TypedDict):
     query: Annotated[str, ..., "Syntactically valid SQL query."]
 
 
-class CouponChain:
+class CouponChain(BaseStrategy):
     CATEGORY_LOOKUP_TOOL_NAME = "search_categories"
 
     def __init__(
@@ -51,31 +42,15 @@ class CouponChain:
         max_tokens=0,
         checkpointer=None,
     ):
-        assert llm is not None, "llm is required"
-        assert coupon_db is not None, "coupon_db is required"
-        assert vector_store is not None, "vector_store is required"
-        assert (
-            category_names is not None and len(category_names) > 0
-        ), "category names are required"
-
-        self.llm = llm
-        self.coupon_db = coupon_db
-        self.vector_store = vector_store
-
-        if cache is not None:
-            set_llm_cache(cache)
-
-        self.allowed_tables = allowed_tables
-        if allowed_tables is not None:
-            allowed_tables = coupon_db.get_usable_table_names()
-
-        self.search_categories_tool = create_retriever_tool(
-            self._create_category_retriever(category_names=category_names),
-            name=self.CATEGORY_LOOKUP_TOOL_NAME,
-            description=(
-                "Use to look up categories to filter on. Input is an approximate spelling "
-                "of the category, output is known category. Use the cateogry most similar to the search."
-            ),
+        super().__init__(
+            llm=llm,
+            vector_store=vector_store,
+            coupon_db=coupon_db,
+            allowed_tables=allowed_tables,
+            cache=cache,
+            category_names=category_names,
+            max_tokens=max_tokens,
+            checkpointer=checkpointer,
         )
 
         if max_tokens > 0:
@@ -88,19 +63,7 @@ class CouponChain:
                 start_on="human",
             )
 
-        self.checkpointer = checkpointer
-        if checkpointer is not None:
-            checkpointer.setup()
-
         self.graph = self._build_graph(checkpointer=self.checkpointer)
-
-    def _create_category_retriever(self, category_names, score_threshold=0.5, k=1):
-        _ = self.vector_store.add_texts(category_names)
-
-        return self.vector_store.as_retriever(
-            # search_type="similarity_score_threshold",
-            search_kwargs={"score_threshold": score_threshold, "k": k},
-        )
 
     def _build_graph(self, checkpointer=None):
         graph_builder = StateGraph(state_schema=State)
@@ -138,7 +101,7 @@ class CouponChain:
 
     def query_or_respond(self, state: State):
         """Generate tool call for retrieval or respond."""
-        llm_with_tools = llm.bind_tools(
+        llm_with_tools = self.llm.bind_tools(
             [self.find_coupons, self.search_categories_tool]
         )
 
@@ -256,86 +219,13 @@ class CouponChain:
 
         return END
 
-    def converse(self):
-        from uuid import uuid4
-
-        thread_id = None
-
-        while True:
-            if thread_id is None:
-                thread_id = str(uuid4())
-                print(f"Thread Id: {thread_id}")
-
-            config = {"configurable": {"thread_id": thread_id}}
-
-            question = input("Enter your question (or type 'exit' to quit): ")
-            if question.lower().strip() in ("exit", "quit", "q"):
-                break
-
-            if question.lower().startswith("reset"):
-                thread_id = None
-                parts = question.split(" ")
-                if len(parts) > 1:
-                    thread_id = parts[1]
-                continue
-
-            for step in self.graph.stream(
-                {
-                    "messages": [{"role": "user", "content": question}],
-                    "user_country": "AE",
-                },
-                stream_mode="values",
-                config=config,
-            ):
-                step["messages"][-1].pretty_print()
-
-
-def create_category_retriever(db: SQLDatabase, vector_store, score_threshold=0.5, k=1):
-    res = db.run("SELECT name FROM categories")
-    res = [el for sub in ast.literal_eval(res) for el in sub if el]
-    categories = list(set(res))
-
-    if categories is not None and len(categories) > 0:
-        _ = vector_store.add_texts(categories)
-
-        return vector_store.as_retriever(
-            # search_type="similarity_score_threshold",
-            search_kwargs={"score_threshold": score_threshold, "k": k},
+    def stream(self, input, config=None, **kwargs):
+        user_country = "AE" if "user_country" not in kwargs else kwargs["user_country"]
+        return self.graph.stream(
+            {
+                "messages": [{"role": "user", "content": input}],
+                "user_country": user_country,
+            },
+            config,
+            **kwargs,
         )
-    return None
-
-
-if __name__ == "__main__":
-    config = Config()
-    embeddings = OpenAIEmbeddings(
-        model="text-embedding-3-large", api_key=config.OPENAI_API_KEY
-    )
-    vector_store = InMemoryVectorStore(embeddings)
-    llm = init_chat_model(
-        "gpt-4o-mini", model_provider="openai", api_key=config.OPENAI_API_KEY
-    )
-
-    coupon_db = SQLDatabase.from_uri(config.COUPON_DB_CONN_STRING)
-    # Todo, this should come from a config
-    allowed_tables = ["categories", "country_list", "coupons", "websites"]
-
-    res = coupon_db.run("SELECT name FROM categories")
-    res = [el for sub in ast.literal_eval(res) for el in sub if el]
-    categories = list(set(res))
-
-    with PostgresSaver.from_conn_string(
-        config.CHECKPOINT_DB_CONN_STRING
-    ) as checkpointer:
-        checkpointer.setup()
-        coupon_chatbot = CouponChain(
-            llm=llm,
-            vector_store=vector_store,
-            checkpointer=checkpointer,
-            cache=InMemoryCache(),
-            max_tokens=384,
-            coupon_db=coupon_db,
-            allowed_tables=allowed_tables,
-            category_names=categories,
-        )
-
-        coupon_chatbot.converse()
