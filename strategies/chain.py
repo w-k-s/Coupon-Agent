@@ -77,6 +77,7 @@ class CouponChain(BaseStrategy):
         graph_builder.add_node(self.execute_query)
         graph_builder.add_node(self.query_or_respond)
         graph_builder.add_node(self.generate_answer)
+        graph_builder.add_node("guard_rails", self._apply_guard_rails)
 
         # graph_builder.add_edge(START, "query_or_respond")
         graph_builder.set_entry_point("query_or_respond")
@@ -95,7 +96,8 @@ class CouponChain(BaseStrategy):
             "search_categories", "query_or_respond"
         )  # query_or_respond will see the category from the conversation history
         graph_builder.add_edge("execute_query", "generate_answer")
-        graph_builder.add_edge("execute_query", END)
+        graph_builder.add_edge("generate_answer", "guard_rails")
+        graph_builder.add_edge("guard_rails", END)
 
         return graph_builder.compile(checkpointer=checkpointer)
 
@@ -211,7 +213,7 @@ class CouponChain(BaseStrategy):
         response = self.llm.invoke(prompt)
         return {"messages": [response.content]}
 
-    def conditional_tool_calling(seld, state: State):
+    def conditional_tool_calling(self, state: State):
         # Check if the latest message is a tool call
         ai_message = state["messages"][-1]
         if hasattr(ai_message, "tool_calls") and len(ai_message.tool_calls) > 0:

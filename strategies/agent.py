@@ -4,9 +4,6 @@ from langgraph.prebuilt import create_react_agent
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_community.utilities import SQLDatabase
 from langchain_core.messages.utils import trim_messages, count_tokens_approximately
-from guardrails.hub import DetectPII
-from guardrails import Guard
-from langchain_core.messages.ai import AIMessage
 
 
 class CouponAgent(BaseStrategy):
@@ -73,7 +70,7 @@ class CouponAgent(BaseStrategy):
             7. Ensure all messages are user-friendly and cheerful!
 
             8. When a user country is specified, search for coupons for that country as well as coupons without country information.
-               When a user country is not specified, you do not need to consider country in your query.            
+               When a user country is not specified, you do not need to consider country in your query.        
             - 
 
         """.format(
@@ -117,43 +114,7 @@ class CouponAgent(BaseStrategy):
 
     # https://github.com/langchain-ai/langchain/blob/master/libs/langchain_v1/langchain/agents/middleware/pii.py
     def _post_model_hook(self, state):
-        messages = state["messages"]
-        if not messages:
-            return messages
-
-        new_messages = list(messages)
-
-        guard = Guard().use(DetectPII, ["EMAIL_ADDRESS", "PHONE_NUMBER"], "fix")
-
-        last_ai_index = None
-        for i in range(len(messages) - 1, -1, -1):
-            if isinstance(messages[i], AIMessage):
-                last_ai_index = i
-                break
-
-        if last_ai_index is not None:
-            for i in range(last_ai_index, len(messages)):
-                msg = messages[i]
-                if isinstance(msg, AIMessage):
-                    ai_msg = msg
-                    if not ai_msg.content:
-                        continue
-
-                    content = str(ai_msg.content)
-                    print(f"Tool Message (id={ai_msg.id}): {content}")
-                    result = guard.validate(content)
-                    if not result.validated_output:
-                        continue
-
-                    updated_message = AIMessage(
-                        content=result.validated_output,
-                        id=ai_msg.id,
-                        name=ai_msg.name,
-                    )
-                    print(f"Updated Message: {updated_message}")
-                    new_messages[i] = updated_message
-
-        return {"messages": new_messages}
+        return self._apply_guard_rails(state)
 
     def stream(self, question, config=None, **kwargs):
 

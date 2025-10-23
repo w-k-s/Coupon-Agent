@@ -4,6 +4,9 @@ from langchain_community.utilities import SQLDatabase
 from langchain.globals import set_llm_cache
 from langchain.agents.agent_toolkits import create_retriever_tool
 from langchain_core.runnables.config import RunnableConfig
+from guardrails.hub import DetectPII
+from guardrails import Guard
+from langchain_core.messages.ai import AIMessage
 
 
 class BaseStrategy(ABC):
@@ -58,6 +61,45 @@ class BaseStrategy(ABC):
             # search_type="similarity_score_threshold",
             search_kwargs={"score_threshold": score_threshold, "k": k},
         )
+
+    def _apply_guard_rails(self, state):
+        messages = state["messages"]
+        if not messages:
+            return messages
+
+        new_messages = list(messages)
+
+        guard = Guard().use(DetectPII, ["EMAIL_ADDRESS", "PHONE_NUMBER"], "fix")
+
+        last_ai_index = None
+        for i in range(len(messages) - 1, -1, -1):
+            if isinstance(messages[i], AIMessage):
+                last_ai_index = i
+                break
+
+        if last_ai_index is not None:
+            for i in range(last_ai_index, len(messages)):
+                msg = messages[i]
+                if isinstance(msg, AIMessage):
+                    ai_msg = msg
+                    if not ai_msg.content:
+                        continue
+
+                    content = str(ai_msg.content)
+                    print(f"Tool Message (id={ai_msg.id}): {content}")
+                    result = guard.validate(content)
+                    if not result.validated_output:
+                        continue
+
+                    updated_message = AIMessage(
+                        content=result.validated_output,
+                        id=ai_msg.id,
+                        name=ai_msg.name,
+                    )
+                    print(f"Updated Message: {updated_message}")
+                    new_messages[i] = updated_message
+
+        return {"messages": new_messages}
 
     @abstractmethod
     def stream(
