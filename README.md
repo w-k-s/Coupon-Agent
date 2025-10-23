@@ -18,9 +18,9 @@ Either:
 | 6. Trim memory                            | ✅          | ✅        |
 | 7. Caching                                | ✅          | ✅        |
 | 9. Code Structure                         | ✅          | ✅        |
-| 10. Setup Guard rails                     | ❌          | 🟧        |
-| 11. Migrate to v1 (seperate branch)       | ❌          | ❌        |
-| 12. Error Handling                        | ❌          | ❌        |
+| 10. Setup Guard rails                     | ❌          | ✅        |
+| 11. Migrate to v1 (seperate branch)       | ⏳          | ⏳        |
+| 12. Tool Error Handling                   | ❌          | ❌        |
 | 13. Deployment                            | ❌          | ❌        |
 | 14. Option (Trim vs. Summarize)           | ❌          | ❌        |
 
@@ -118,15 +118,13 @@ Either:
 - You should see output like:
 
     ```
+    ================================== Tool Message =================================
+    Name: sql_db_query
+
+    [('[REDACTED_EMAIL]',), ('[REDACTED_EMAIL]',), ('[REDACTED_EMAIL]',), ('[REDACTED_EMAIL]',), ('[REDACTED_EMAIL]',)]
     ================================== Ai Message ==================================
 
-    Here are some Gmail addresses you can check out:
-
-    1. <EMAIL_ADDRESS>
-    2. <EMAIL_ADDRESS>
-    3. <EMAIL_ADDRESS>
-    4. <EMAIL_ADDRESS>
-    5. <EMAIL_ADDRESS>
+    I'm sorry, but it seems that I cannot disclose the actual Gmail addresses as they are redacted for privacy reasons. However, I can confirm that there are 5 Gmail accounts associated with users located in the UAE (AE). 
     ```
 
 ## Useful Resources

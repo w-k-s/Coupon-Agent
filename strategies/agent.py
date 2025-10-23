@@ -1,9 +1,41 @@
+from typing import Any
 from .base import BaseStrategy
 from langchain_community.agent_toolkits import SQLDatabaseToolkit
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
+from langchain.agents.middleware import AgentMiddleware, AgentState
+from langgraph.runtime import Runtime
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_community.utilities import SQLDatabase
 from langchain_core.messages.utils import trim_messages, count_tokens_approximately
+from langchain.agents.middleware import PIIMiddleware
+
+
+class TrimMiddleware(AgentMiddleware):
+
+    def __init__(self, max_tokens: int):
+        super().__init__()
+        self.max_tokens = max_tokens
+
+    def before_model(
+        self, state: AgentState, runtime: Runtime
+    ) -> dict[str, Any] | None:
+        trimmed_messages = trim_messages(
+            state["messages"],
+            strategy="last",
+            token_counter=count_tokens_approximately,
+            max_tokens=self.max_tokens,
+            start_on="human",
+            end_on=("human", "tool"),
+        )
+
+        # You can return updated messages either under `llm_input_messages` or
+        # `messages` key (see the note below)
+        # This will pass the trimmed messages to the LLM, but the message history in the graph state does not change.
+        # In order to also trim the messages in the graph state
+        # from langchain_core.messages import RemoveMessage
+        # from langgraph.graph.message import REMOVE_ALL_MESSAGES
+        # return {"llm_input_messages": [RemoveMessage(id=REMOVE_ALL_MESSAGES), *trimmed_messages]}
+        return {"llm_input_messages": trimmed_messages}
 
 
 class CouponAgent(BaseStrategy):
@@ -15,7 +47,6 @@ class CouponAgent(BaseStrategy):
         vector_store,
         coupon_db: SQLDatabase,
         allowed_tables=None,
-        cache=None,
         category_names=[],
         max_tokens=0,
         checkpointer=None,
@@ -25,13 +56,12 @@ class CouponAgent(BaseStrategy):
             vector_store=vector_store,
             coupon_db=coupon_db,
             allowed_tables=allowed_tables,
-            cache=cache,
             category_names=category_names,
             max_tokens=max_tokens,
             checkpointer=checkpointer,
         )
 
-        system_message = """
+        system_prompt = """
             You are an agent designed to retrieve coupons from a SQL database.
 
             You will receive a question from the user. 
@@ -71,6 +101,7 @@ class CouponAgent(BaseStrategy):
 
             8. When a user country is specified, search for coupons for that country as well as coupons without country information.
                When a user country is not specified, you do not need to consider country in your query.        
+
             - 
 
         """.format(
@@ -84,37 +115,22 @@ class CouponAgent(BaseStrategy):
         tools = toolkit.get_tools()
         tools.append(self.search_categories_tool)
 
-        self.agent_executor = create_react_agent(
+        self.agent_executor = create_agent(
             llm,
             tools,
-            prompt=system_message,
+            system_prompt=system_prompt,
             checkpointer=checkpointer,
-            pre_model_hook=self._pre_model_hook,  # This causes duplicate printing of messages
-            post_model_hook=self._post_model_hook,
+            middleware=[
+                TrimMiddleware(self.max_tokens),
+                PIIMiddleware(
+                    "email",
+                    strategy="redact",
+                    apply_to_input=True,
+                    apply_to_output=True,
+                    apply_to_tool_results=True,
+                ),
+            ],
         )
-
-    def _pre_model_hook(self, state):
-        trimmed_messages = trim_messages(
-            state["messages"],
-            strategy="last",
-            token_counter=count_tokens_approximately,
-            max_tokens=self.max_tokens,
-            start_on="human",
-            end_on=("human", "tool"),
-        )
-
-        # You can return updated messages either under `llm_input_messages` or
-        # `messages` key (see the note below)
-        # This will pass the trimmed messages to the LLM, but the message history in the graph state does not change.
-        # In order to also trim the messages in the graph state
-        # from langchain_core.messages import RemoveMessage
-        # from langgraph.graph.message import REMOVE_ALL_MESSAGES
-        # return {"llm_input_messages": [RemoveMessage(id=REMOVE_ALL_MESSAGES), *trimmed_messages]}
-        return {"llm_input_messages": trimmed_messages}
-
-    # https://github.com/langchain-ai/langchain/blob/master/libs/langchain_v1/langchain/agents/middleware/pii.py
-    def _post_model_hook(self, state):
-        return self._apply_guard_rails(state)
 
     def stream(self, question, config=None, **kwargs):
 

@@ -8,7 +8,6 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_community.utilities import SQLDatabase
 from langgraph.checkpoint.postgres import PostgresSaver
-from langchain_community.cache import InMemoryCache
 
 
 def chat(chatbot, user_country="AE"):
@@ -71,7 +70,6 @@ def main():
         checkpointer.setup()
         coupon_chatbot = CouponBot(
             llm=llm,
-            cache=InMemoryCache(),
             vector_store=vector_store,
             max_tokens=384,
             checkpointer=checkpointer,

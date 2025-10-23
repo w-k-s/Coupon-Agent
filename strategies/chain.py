@@ -7,13 +7,14 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_community.tools.sql_database.tool import QuerySQLDatabaseTool
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
+from langchain_core.tools.structured import StructuredTool
 from langchain_core.messages import BaseMessage
 from langchain_core.messages.human import HumanMessage
 from langchain_core.messages.system import SystemMessage
 from langchain_community.utilities import SQLDatabase
 from langchain_core.messages import trim_messages
-from langchain.tools.base import StructuredTool
 from langgraph.graph import END, StateGraph
+from langchain.agents.middleware import PIIMiddleware
 
 
 class State(TypedDict):
@@ -37,7 +38,6 @@ class CouponChain(BaseStrategy):
         vector_store,
         coupon_db: SQLDatabase,
         allowed_tables=None,
-        cache=None,
         category_names=[],
         max_tokens=0,
         checkpointer=None,
@@ -47,7 +47,6 @@ class CouponChain(BaseStrategy):
             vector_store=vector_store,
             coupon_db=coupon_db,
             allowed_tables=allowed_tables,
-            cache=cache,
             category_names=category_names,
             max_tokens=max_tokens,
             checkpointer=checkpointer,
@@ -77,7 +76,7 @@ class CouponChain(BaseStrategy):
         graph_builder.add_node(self.execute_query)
         graph_builder.add_node(self.query_or_respond)
         graph_builder.add_node(self.generate_answer)
-        graph_builder.add_node("guard_rails", self._apply_guard_rails)
+        graph_builder.add_node(self.apply_guardrails)
 
         # graph_builder.add_edge(START, "query_or_respond")
         graph_builder.set_entry_point("query_or_respond")
@@ -96,8 +95,8 @@ class CouponChain(BaseStrategy):
             "search_categories", "query_or_respond"
         )  # query_or_respond will see the category from the conversation history
         graph_builder.add_edge("execute_query", "generate_answer")
-        graph_builder.add_edge("generate_answer", "guard_rails")
-        graph_builder.add_edge("guard_rails", END)
+        graph_builder.add_edge("generate_answer", "apply_guardrails")
+        graph_builder.add_edge("apply_guardrails", END)
 
         return graph_builder.compile(checkpointer=checkpointer)
 
@@ -212,6 +211,18 @@ class CouponChain(BaseStrategy):
         )
         response = self.llm.invoke(prompt)
         return {"messages": [response.content]}
+
+    def apply_guardrails(self, state: State):
+        pii = PIIMiddleware(
+            "email",
+            strategy="redact",
+            apply_to_input=True,
+            apply_to_output=True,
+            apply_to_tool_results=True,
+        )
+
+        # TODO: How do we pass runtime to langchains in v1
+        return pii.after_model(state, runtime=None)
 
     def conditional_tool_calling(self, state: State):
         # Check if the latest message is a tool call
