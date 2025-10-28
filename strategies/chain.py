@@ -172,8 +172,14 @@ class CouponChain(BaseStrategy):
             }
         )
         structured_llm = self.llm.with_structured_output(QueryOutput)
-        result = structured_llm.invoke(prompt)
-        return result["query"]
+
+        try:
+            result = structured_llm.invoke(prompt)
+            return result["query"]
+        except Exception as e:
+            """Format the error message"""
+            # Tool Error handling based on: https://github.com/langchain-ai/langchain-community/blob/main/libs/community/langchain_community/utilities/sql_database.py#L642C13-L642C43
+            return f"Error: {e}"
 
     def execute_query(self, state: State):
         """Execute SQL query."""

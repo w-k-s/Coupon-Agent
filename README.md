@@ -19,10 +19,12 @@ Either:
 | 7. Caching                                | ✅          | ✅        |
 | 9. Code Structure                         | ✅          | ✅        |
 | 10. Setup Guard rails                     | ❌          | ✅        |
-| 11. Migrate to v1 (seperate branch)       | ⏳          | ⏳        |
-| 12. Tool Error Handling                   | ❌          | ❌        |
-| 13. Deployment                            | ❌          | ❌        |
+| 11. Migrate to v1 (seperate branch)       | ✅          | ✅        |
+| 12. Tool Error Handling                   | ✅          | N/A       |
+| 13. Deployment**                          | ❌          | ❌        |
 | 14. Option (Trim vs. Summarize)           | ❌          | ❌        |
+
+** Deployment skipped due to db hosting
 
 ## Setup
 
